@@ -109,9 +109,7 @@ class classmethod():
         self.__func = func
 
     def __get__(self, obj, cls):
-        def _method(*args, **kwargs):
-            return self.__func(cls, *args, **kwargs)
-        return _method
+        return self.__func
 
 
 #--------------------------------------------------------
