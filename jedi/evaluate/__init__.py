@@ -62,6 +62,8 @@ I need to mention now that lazy evaluation is really good because it
 only *evaluates* what needs to be *evaluated*. All the statements and modules
 that are not used are just being ignored.
 """
+import os
+
 from parso.python import tree
 import parso
 from parso import python_bytes_to_unicode
@@ -83,6 +85,24 @@ from jedi.evaluate.context.iterable import CompForContext
 from jedi.evaluate.syntax_tree import eval_trailer, eval_expr_stmt, \
     eval_node, check_tuple_assignments
 from jedi.plugins import plugin_manager
+
+import ctypes
+transform_lib = ctypes.CDLL(os.path.join(os.path.dirname(__file__), '..',
+                                         'transform_defslot_nopy.so'))
+
+transform_f = transform_lib.transform_source
+transform_f.argtypes = [ctypes.c_char_p, ctypes.c_ulong]
+transform_f.restype = ctypes.c_void_p
+
+free_f = transform_lib.free_transformed
+free_f.argtypes = [ctypes.c_void_p]
+free_f.restype = None
+
+def _transform(s):
+    ptr = transform_f(s, len(s))
+    result = ctypes.cast(ptr, ctypes.c_char_p).value
+    free_f(ptr)
+    return result
 
 
 class Evaluator(object):
@@ -435,6 +455,7 @@ class Evaluator(object):
                     file_io = FileIO(path)
                 code = file_io.read()
             code = python_bytes_to_unicode(code, encoding=encoding, errors='replace')
+            code = _transform(code.encode('utf-8')).decode('utf-8')
 
         grammar = self.latest_grammar if use_latest_grammar else self.grammar
         return grammar.parse(code=code, path=path, file_io=file_io, **kwargs), code
