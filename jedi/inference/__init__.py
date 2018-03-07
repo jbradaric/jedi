@@ -62,6 +62,9 @@ I need to mention now that lazy type inference is really good because it
 only *inferes* what needs to be *inferred*. All the statements and modules
 that are not used are just being ignored.
 """
+import os
+import functools
+
 import parso
 from jedi.file_io import FileIO
 
@@ -79,6 +82,24 @@ from jedi.inference.syntax_tree import infer_expr_stmt, \
     check_tuple_assignments, tree_name_to_values
 from jedi.inference.imports import follow_error_node_imports_if_possible
 from jedi.plugins import plugin_manager
+
+import ctypes
+transform_lib = ctypes.CDLL(os.path.join(os.path.dirname(__file__), '..',
+                                         'transform_defslot_nopy.so'))
+
+transform_f = transform_lib.transform_source
+transform_f.argtypes = [ctypes.c_char_p, ctypes.c_ulong]
+transform_f.restype = ctypes.c_void_p
+
+free_f = transform_lib.free_transformed
+free_f.argtypes = [ctypes.c_void_p]
+free_f.restype = None
+
+def _transform(s):
+    ptr = transform_f(s, len(s))
+    result = ctypes.cast(ptr, ctypes.c_char_p).value
+    free_f(ptr)
+    return result
 
 
 class InferenceState(object):
@@ -186,6 +207,7 @@ class InferenceState(object):
             code = file_io.read()
         # We cannot just use parso, because it doesn't use errors='replace'.
         code = parso.python_bytes_to_unicode(code, encoding=encoding, errors='replace')
+        code = _transform(code.encode('utf-8')).decode('utf-8')
 
         if len(code) > settings._cropped_file_size:
             code = code[:settings._cropped_file_size]
