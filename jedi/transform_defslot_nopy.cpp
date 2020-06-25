@@ -6,12 +6,14 @@
 namespace transform {
 
 static const std::string DEFSLOT("defslot(");
+static const std::string DEFVIRTSLOT("defvirtslot(");
 static const std::string DEFCONST("defconst(");
 static const std::string TYPE_STMT("type=");
 
 enum class StatementType {
     defslot,
-    defconst
+    defvirtslot,
+    defconst,
 };
 
 typedef std::tuple<std::string::const_iterator, std::string::const_iterator> iter_tuple;
@@ -72,6 +74,8 @@ std::string transform_single(const std::string& source, size_t start,
     size_t defstmt_len = 0;
     if (stmt_type == StatementType::defslot) {
         defstmt_len = DEFSLOT.size();
+    } else if (stmt_type == StatementType::defvirtslot) {
+        defstmt_len = DEFVIRTSLOT.size();
     } else {
         defstmt_len = DEFCONST.size();
     }
@@ -115,6 +119,17 @@ std::string transform_single(const std::string& source, size_t start,
     return result;
 }
 
+struct StatementPos {
+    StatementType stmt;
+    size_t pos;
+
+    StatementPos(StatementType stmt, size_t pos) : stmt(stmt), pos(pos) {}
+
+    bool operator<(const StatementPos &other) const {
+        return pos < other.pos;
+    }
+};
+
 std::string transform_source(const std::string& source) {
     std::string result;
     result.reserve(source.size());
@@ -123,27 +138,22 @@ std::string transform_source(const std::string& source) {
     auto remaining = begin_iter;
     size_t pos = 0;
     while (true) {
-        StatementType stmt_type = StatementType::defslot;
         auto start = source.find(DEFSLOT, pos);
         auto defconst_start = source.find(DEFCONST, pos);
-        if (start != std::string::npos && defconst_start != std::string::npos) {
-            if (defconst_start < start) {
-                start = defconst_start;
-                stmt_type = StatementType::defconst;
-            }
-        } else {
-            if (start == std::string::npos) {
-                stmt_type = StatementType::defconst;
-                start = defconst_start;
-            }
-        }
-        if (start == std::string::npos) {
+        auto defvirtslot_start = source.find(DEFVIRTSLOT, pos);
+
+        auto next_stmt = std::min({
+            StatementPos(StatementType::defslot, start),
+            StatementPos(StatementType::defconst, defconst_start),
+            StatementPos(StatementType::defvirtslot, defvirtslot_start),
+        });
+        if (next_stmt.pos == std::string::npos) {
             result.append(remaining, end(source));
             break;
         }
 
-        result.append(remaining, begin_iter + start);
-        result.append(transform_single(source, start, stmt_type, pos));
+        result.append(remaining, begin_iter + next_stmt.pos);
+        result.append(transform_single(source, start, next_stmt.stmt, pos));
         remaining = begin_iter + pos;
     }
 
